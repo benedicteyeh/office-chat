@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>辦公室座位同步小程式</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; display: flex; justify-content: center; padding: 50px; margin: 0; }
+        .office-layout { display: flex; flex-direction: column; gap: 50px; }
+        .cluster { display: flex; align-items: center; gap: 15px; }
+        .side-desk { width: 35px; height: 140px; border: 3px solid #333; background-color: #fff; }
+        .main-desks { display: grid; grid-template-columns: repeat(3, 70px); grid-template-rows: repeat(2, 70px); gap: 10px; position: relative; }
+        .divider { position: absolute; top: 50%; left: -5px; right: -25px; height: 4px; background-color: #333; transform: translateY(-50%); z-index: 1; }
+        .seat { border: 3px solid #333; background-color: #fff; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; z-index: 2; transition: all 0.2s ease; }
+        .status-empty { background-color: #fff; color: #aaa; }
+        .status-at-seat { background-color: #d4edda; border-color: #28a745; color: #155724; }
+        .status-leave { background-color: #e2e3e5; border-color: #6c757d; color: #383d41; }
+        .status-away { background-color: #fff3cd; border-color: #ffc107; color: #856404; }
+        .status-slacking { background-color: #f8d7da; border-color: #dc3545; color: #721c24; font-style: italic; }
+        .bubble { position: absolute; width: 140px; padding: 8px 10px; background: #fff; border: 2px solid #333; border-radius: 15px; font-size: 12px; line-height: 1.4; z-index: 10; display: none; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-wrap: break-word; }
+        .seat.has-msg .bubble { display: -webkit-box; }
+        .row-top .bubble { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+        .row-top .bubble::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: #333 transparent transparent transparent; }
+        .row-bottom .bubble { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
+        .row-bottom .bubble::after { content: ''; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: transparent transparent #333 transparent; }
+        #overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 100; width: 300px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
+        .btn-group { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        button { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-save { background: #007bff; color: white; }
+        .btn-cancel { background: #e2e3e5; color: #333; }
+        #loading-hint { position: fixed; top: 10px; right: 10px; background: #333; color: #fff; padding: 5px 10px; border-radius: 5px; font-size: 12px; display: none; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+    <div id="loading-hint">同步中...</div>
+
+    <div class="office-layout" id="office-container"></div>
+
+    <div id="overlay" onclick="closeModal()"></div>
+    <div id="modal">
+        <h3>更新狀態</h3>
+        <div class="form-group"><label>人員姓名</label><input type="text" id="input-name" maxlength="10"></div>
+        <div class="form-group">
+            <label>目前狀態</label>
+            <select id="input-status">
+                <option value="empty">空位</option>
+                <option value="at-seat">在座位 (綠色)</option>
+                <option value="away">暫離 (黃色)</option>
+                <option value="leave">休假 (灰色)</option>
+                <option value="slacking">人在但不想上班 (紅色)</option>
+            </select>
+        </div>
+        <div class="form-group"><label>聊天內容</label><textarea id="input-msg" rows="3" maxlength="60"></textarea></div>
+        <div class="btn-group">
+            <button class="btn-cancel" onclick="closeModal()">取消</button>
+            <button class="btn-save" onclick="saveToSheet()">同步到雲端</button>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "https://script.google.com/macros/s/AKfycbxkKqCdxoE8LYlg7m4I3un_A9DLQHbzA3_NcJ-ACnnkxEAC-MROKJfv1huJryhbsTdQ0A/exec"; 
+
+        const layoutData = [
+            { id: 'group1', seats: [{id:'t-1',row:'top'},{id:'t-2',row:'top'},{id:'t-3',row:'top'},{id:'b-1',row:'bottom'},{id:'b-2',row:'bottom'},{id:'b-3',row:'bottom'}] },
+            { id: 'group2', seats: [{id:'t-4',row:'top'},{id:'t-5',row:'top'},{id:'t-6',row:'top'},{id:'b-4',row:'bottom'},{id:'b-5',row:'bottom'},{id:'b-6',row:'bottom'}] }
+        ];
+
+        let currentEditingSeat = null;
+
+        function init() {
+            const container = document.getElementById('office-container');
+            layoutData.forEach(group => {
+                const cluster = document.createElement('div');
+                cluster.className = 'cluster';
+                cluster.innerHTML = `<div class="side-desk"></div><div class="main-desks"><div class="divider"></div></div>`;
+                const deskArea = cluster.querySelector('.main-desks');
+                
+                group.seats.forEach(s => {
+                    const div = document.createElement('div');
+                    div.id = s.id;
+                    div.className = `seat row-${s.row} status-empty`;
+                    div.onclick = () => openModal(s.id);
+                    div.innerHTML = `<div class="bubble" id="bubble-${s.id}"></div><span id="name-${s.id}">載入中</span>`;
+                    deskArea.appendChild(div);
+                });
+                container.appendChild(cluster);
+            });
+            fetchData();
+            setInterval(fetchData, 10000);
+        }
+
+        async function fetchData() {
+            document.getElementById('loading-hint').style.display = 'block';
+            try {
+                const res = await fetch(API_URL);
+                const data = await res.json();
+                data.forEach(item => updateUI(item));
+            } catch (e) { console.error("抓取失敗", e); }
+            document.getElementById('loading-hint').style.display = 'none';
+        }
+
+        function updateUI(item) {
+            const seatEl = document.getElementById(item.id);
+            if (!seatEl) return;
+            document.getElementById(`name-${item.id}`).innerText = item.name || '空位';
+            const bubbleEl = document.getElementById(`bubble-${item.id}`);
+            
+            seatEl.className = `seat row-${seatEl.classList.contains('row-top')?'top':'bottom'} status-${item.status}`;
+            if (item.msg && item.status !== 'empty') {
+                seatEl.classList.add('has-msg');
+                bubbleEl.innerText = item.msg;
+            } else {
+                seatEl.classList.remove('has-msg');
+            }
+        }
+
+        function openModal(id) {
+            currentEditingSeat = id;
+            document.getElementById('overlay').style.display = 'block';
+            document.getElementById('modal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        async function saveToSheet() {
+            const payload = {
+                id: currentEditingSeat,
+                name: document.getElementById('input-name').value,
+                status: document.getElementById('input-status').value,
+                msg: document.getElementById('input-msg').value
+            };
+
+            closeModal();
+            document.getElementById('loading-hint').style.display = 'block';
+            
+            try {
+                await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                fetchData();
+            } catch (e) { alert("同步失敗，請檢查網路！"); }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
