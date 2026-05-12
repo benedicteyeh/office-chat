@@ -2,32 +2,72 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>辦公室座位同步小程式</title>
+    <title>辦公室座位聊天小程式 (全新不重疊版)</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; display: flex; justify-content: center; padding: 50px; margin: 0; }
-        .office-layout { display: flex; flex-direction: column; gap: 50px; }
-        .cluster { display: flex; align-items: center; gap: 15px; }
-        .side-desk { width: 35px; height: 140px; border: 3px solid #333; background-color: #fff; }
-        .main-desks { display: grid; grid-template-columns: repeat(3, 70px); grid-template-rows: repeat(2, 70px); gap: 10px; position: relative; }
-        .divider { position: absolute; top: 50%; left: -5px; right: -25px; height: 4px; background-color: #333; transform: translateY(-50%); z-index: 1; }
-        .seat { border: 3px solid #333; background-color: #fff; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; z-index: 2; transition: all 0.2s ease; }
-        .status-empty { background-color: #fff; color: #aaa; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; display: flex; justify-content: center; padding: 50px 0; margin: 0; }
+        .main-office { display: flex; flex-direction: column; gap: 80px; width: 750px; }
+        
+        /* 座位群組 (L型+Grid) */
+        .cluster-group { display: flex; align-items: flex-start; gap: 30px; position: relative; }
+        .boss-wrap { width: 150px; position: relative; }
+        .grid-seats { display: grid; grid-template-columns: repeat(3, 150px); grid-template-rows: repeat(2, minmax(75px, auto)); gap: 15px; position: relative; flex-grow: 1; }
+
+        /* 桌子邊緣黑線 (標準座) */
+        .grid-seats::before { content: ''; position: absolute; top: -10px; bottom: -10px; left: -10px; right: -10px; border: 4px solid #333; z-index: 1; }
+        
+        /* 座位基礎樣式 */
+        .seat { background-color: #fff; border: 3px solid #333; cursor: pointer; display: flex; flex-direction: column; z-index: 2; transition: min-height 0.2s ease, all 0.2s ease; position: relative; box-sizing: border-box; }
+        .seat:hover { transform: scale(1.03); box-shadow: 0 5px 10px rgba(0,0,0,0.1); }
+        
+        /* 標準座 (矩形) */
+        .seat-standard { width: 150px; min-height: 75px; padding: 5px; justify-content: center; align-items: flex-start; }
+        
+        /* 組長座 (L形 wrap) */
+        .seat-boss { position: relative; width: 150px; min-height: 150px; z-index: 3; }
+        .seat-boss::before, .seat-boss::after { content: ''; position: absolute; background: #fff; border: 3px solid #333; box-sizing: border-box; }
+        
+        /* 上 Cluster L形: 上長、左長 */
+        .group-top .seat-boss::before { width: 75px; height: 150px; top: 0; left: 0; }
+        .group-top .seat-boss::after { width: 150px; height: 75px; top: 0; left: 0; }
+        
+        /* 下 Cluster L形: 下長、左長 */
+        .group-bottom .seat-boss::before { width: 75px; height: 150px; top: 0; left: 0; }
+        .group-bottom .seat-boss::after { width: 150px; height: 75px; bottom: 0; left: 0; }
+        
+        /* 組長座內部內容的佈局 */
+        .seat-boss .content-wrap { position: absolute; bottom: 5px; right: 5px; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 70px; z-index: 4; }
+        .group-top .seat-boss .content-wrap { top: auto; bottom: 5px; } /* 內容在下側桌子邊緣 */
+        .group-bottom .seat-boss .content-wrap { top: auto; bottom: 5px; } /* 內容在下側桌子邊緣 */
+        
+        /* 狀態顏色設計 (保留) */
+        .status-empty { background-color: #fff; color: #aaa; border-color: #333; }
         .status-at-seat { background-color: #d4edda; border-color: #28a745; color: #155724; }
         .status-leave { background-color: #e2e3e5; border-color: #6c757d; color: #383d41; }
         .status-away { background-color: #fff3cd; border-color: #ffc107; color: #856404; }
         .status-slacking { background-color: #f8d7da; border-color: #dc3545; color: #721c24; font-style: italic; }
-        .bubble { position: absolute; width: 140px; padding: 8px 10px; background: #fff; border: 2px solid #333; border-radius: 15px; font-size: 12px; line-height: 1.4; z-index: 10; display: none; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-wrap: break-word; }
-        .seat.has-msg .bubble { display: -webkit-box; }
-        .row-top .bubble { bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
-        .row-top .bubble::after { content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: #333 transparent transparent transparent; }
-        .row-bottom .bubble { top: calc(100% + 10px); left: 50%; transform: translateX(-50%); }
-        .row-bottom .bubble::after { content: ''; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: transparent transparent #333 transparent; }
+
+        /* 對話框 - 集成在座位內 (垂直堆疊) */
+        .bubble { display: none; padding: 5px 8px; background: rgba(255, 255, 255, 0.9); border: 2px solid #333; border-radius: 8px; font-size: 11px; line-height: 1.3; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-wrap: break-word; flex-shrink: 0; margin-bottom: 5px; width: calc(100% - 10px); }
+        .has-msg .bubble { display: -webkit-box; }
+        
+        /* 人頭和名字樣式 (圖案更像) */
+        .head-icon { width: 25px; height: 25px; border-radius: 50%; border: 2px solid #333; margin-right: 5px; flex-shrink: 0; position: relative; overflow: hidden; }
+        .head-icon::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: 2px solid #333; border-radius: 50%; } /* 繪製簡單頭形 */
+        
+        .name { font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .id-label { font-size: 10px; color: #aaa; margin-left: auto; }
+
+        /* 當有訊息時，增加座位高度 */
+        .seat.has-msg { min-height: 150px; justify-content: flex-start; }
+        .seat-boss.has-msg { min-height: 225px; } /* 組長座位增加高度 */
+        
+        /* 彈出視窗設計 (同上次) */
         #overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 99; }
         #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 100; width: 300px; }
         .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px;}
         .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
-        .btn-group { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn-group { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;}
         button { padding: 8px 16px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
         .btn-save { background: #007bff; color: white; }
         .btn-cancel { background: #e2e3e5; color: #333; }
@@ -38,7 +78,7 @@
 
     <div id="loading-hint">同步中...</div>
 
-    <div class="office-layout" id="office-container"></div>
+    <div class="main-office" id="office-container"></div>
 
     <div id="overlay" onclick="closeModal()"></div>
     <div id="modal">
@@ -54,7 +94,7 @@
                 <option value="slacking">人在但不想上班 (紅色)</option>
             </select>
         </div>
-        <div class="form-group"><label>聊天內容</label><textarea id="input-msg" rows="3" maxlength="60"></textarea></div>
+        <div class="form-group"><label>聊天內容 (最多3行)</label><textarea id="input-msg" rows="3" maxlength="60"></textarea></div>
         <div class="btn-group">
             <button class="btn-cancel" onclick="closeModal()">取消</button>
             <button class="btn-save" onclick="saveToSheet()">同步到雲端</button>
@@ -62,12 +102,13 @@
     </div>
 
     <script>
-        // 已帶入您提供的 API 網址
+        // 您的 Google Apps Script 部署網址 (保留)
         const API_URL = "https://script.google.com/macros/s/AKfycbxkKqCdxoE8LYlg7m4I3un_A9DLQHbzA3_NcJ-ACnnkxEAC-MROKJfv1huJryhbsTdQ0A/exec"; 
 
+        // 重新定義佈局以符合 image_1.png，使用垂直堆疊的內容佈局
         const layoutData = [
-            { id: 'group1', seats: [{id:'t-1',row:'top'},{id:'t-2',row:'top'},{id:'t-3',row:'top'},{id:'b-1',row:'bottom'},{id:'b-2',row:'bottom'},{id:'b-3',row:'bottom'}] },
-            { id: 'group2', seats: [{id:'t-4',row:'top'},{id:'t-5',row:'top'},{id:'t-6',row:'top'},{id:'b-4',row:'bottom'},{id:'b-5',row:'bottom'},{id:'b-6',row:'bottom'}] }
+            { id: 'group-top', name: '上 Cluster', bossId: 'top-boss', gridIds: [['top-1', 'top-2', 'top-3'], ['top-4', 'top-5', 'top-6']] },
+            { id: 'group-bottom', name: '下 Cluster', bossId: 'bottom-boss', gridIds: [['bottom-1', 'bottom-2', 'bottom-3'], ['bottom-4', 'bottom-5', 'bottom-6']] }
         ];
 
         let currentEditingSeat = null;
@@ -76,20 +117,55 @@
         function init() {
             const container = document.getElementById('office-container');
             layoutData.forEach(group => {
-                const cluster = document.createElement('div');
-                cluster.className = 'cluster';
-                cluster.innerHTML = `<div class="side-desk"></div><div class="main-desks"><div class="divider"></div></div>`;
-                const deskArea = cluster.querySelector('.main-desks');
+                const groupWrap = document.createElement('div');
+                groupWrap.className = `cluster-group ${group.id}`;
+
+                // 1. 組長座位 (L形 wrap)
+                const bossWrap = document.createElement('div');
+                bossWrap.className = 'boss-wrap';
                 
-                group.seats.forEach(s => {
-                    const div = document.createElement('div');
-                    div.id = s.id;
-                    div.className = `seat row-${s.row} status-empty`;
-                    div.onclick = () => openModal(s.id);
-                    div.innerHTML = `<div class="bubble" id="bubble-${s.id}"></div><span id="name-${s.id}">載入中</span>`;
-                    deskArea.appendChild(div);
+                const bossDiv = document.createElement('div');
+                bossDiv.id = group.bossId;
+                bossDiv.className = `seat seat-boss status-empty`;
+                bossDiv.onclick = () => openModal(group.bossId);
+                
+                // L形內部堆疊佈局: 對話框 -> 頭形+名
+                bossDiv.innerHTML = `
+                    <div class="content-wrap">
+                        <div class="bubble" id="bubble-${group.bossId}"></div>
+                        <div style="display:flex; align-items:center;">
+                            <div class="head-icon status-${group.bossId}-head"></div>
+                            <span class="name" id="name-${group.bossId}">載入中</span>
+                        </div>
+                    </div>
+                    <div class="id-label">${group.bossId}</div>`;
+                bossWrap.appendChild(bossDiv);
+                groupWrap.appendChild(bossWrap);
+
+                // 2. 標準座 Grid (3x2)
+                const gridArea = document.createElement('div');
+                gridArea.className = 'grid-seats';
+
+                group.gridIds.forEach(row => {
+                    row.forEach(sid => {
+                        const seatDiv = document.createElement('div');
+                        seatDiv.id = sid;
+                        seatDiv.className = `seat seat-standard status-empty`;
+                        seatDiv.onclick = () => openModal(sid);
+                        
+                        // 標準座堆疊佈局: 對話框 -> 頭形+名
+                        seatDiv.innerHTML = `
+                            <div class="bubble" id="bubble-${sid}"></div>
+                            <div style="display:flex; align-items:center; width:100%;">
+                                <div class="head-icon status-${sid}-head"></div>
+                                <span class="name" id="name-${sid}">載入中</span>
+                                <div class="id-label">${sid}</div>
+                            </div>`;
+                        gridArea.appendChild(seatDiv);
+                    });
                 });
-                container.appendChild(cluster);
+                groupWrap.appendChild(gridArea);
+                container.appendChild(groupWrap);
             });
             fetchData();
             setInterval(fetchData, 10000);
@@ -111,19 +187,24 @@
             document.getElementById(`name-${item.id}`).innerText = item.name || '空位';
             const bubbleEl = document.getElementById(`bubble-${item.id}`);
             
-            seatEl.className = `seat row-${seatEl.classList.contains('row-top')?'top':'bottom'} status-${item.status}`;
+            // 清除舊狀態，套用新狀態
+            seatEl.className = seatEl.className.replace(/status-\S+/g, '');
+            seatEl.classList.add(`status-${item.status}`);
+            
+            // 處理訊息: 垂直堆疊，增加 min-height
             if (item.msg && item.status !== 'empty') {
                 seatEl.classList.add('has-msg');
                 bubbleEl.innerText = item.msg;
             } else {
                 seatEl.classList.remove('has-msg');
+                bubbleEl.innerText = '';
             }
         }
 
         function openModal(id) {
             currentEditingSeat = id;
             
-            // 優先讀取上次儲存的名字
+            // 記憶名字功能 (保留)
             const savedName = localStorage.getItem('office_user_name');
             const currentData = allSeatData.find(s => s.id === id);
 
@@ -135,7 +216,6 @@
                 document.getElementById('input-name').value = '';
             }
 
-            // 預載目前的狀態與訊息
             if (currentData) {
                 document.getElementById('input-status').value = currentData.status;
                 document.getElementById('input-msg').value = currentData.msg;
@@ -155,31 +235,15 @@
             const statusInput = document.getElementById('input-status').value;
             const msgInput = document.getElementById('input-msg').value.trim();
 
-            if (!nameInput && statusInput !== 'empty') {
-                alert("請輸入您的姓名喔！");
-                return;
-            }
+            if (!nameInput && statusInput !== 'empty') { alert("請輸入您的姓名喔！"); return; }
+            if (nameInput) { localStorage.setItem('office_user_name', nameInput); }
 
-            // 記憶名字到瀏覽器
-            if (nameInput) {
-                localStorage.setItem('office_user_name', nameInput);
-            }
-
-            const payload = {
-                id: currentEditingSeat,
-                name: nameInput || '空位',
-                status: statusInput,
-                msg: msgInput
-            };
-
+            const payload = { id: currentEditingSeat, name: nameInput || '空位', status: statusInput, msg: msgInput };
             closeModal();
             document.getElementById('loading-hint').style.display = 'block';
             
             try {
-                await fetch(API_URL, {
-                    method: 'POST',
-                    body: JSON.stringify(payload)
-                });
+                await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
                 fetchData();
             } catch (e) { alert("同步失敗，請檢查網路！"); }
         }
