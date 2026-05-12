@@ -62,6 +62,7 @@
     </div>
 
     <script>
+        // 已帶入您提供的 API 網址
         const API_URL = "https://script.google.com/macros/s/AKfycbxkKqCdxoE8LYlg7m4I3un_A9DLQHbzA3_NcJ-ACnnkxEAC-MROKJfv1huJryhbsTdQ0A/exec"; 
 
         const layoutData = [
@@ -70,6 +71,7 @@
         ];
 
         let currentEditingSeat = null;
+        let allSeatData = [];
 
         function init() {
             const container = document.getElementById('office-container');
@@ -97,8 +99,8 @@
             document.getElementById('loading-hint').style.display = 'block';
             try {
                 const res = await fetch(API_URL);
-                const data = await res.json();
-                data.forEach(item => updateUI(item));
+                allSeatData = await res.json();
+                allSeatData.forEach(item => updateUI(item));
             } catch (e) { console.error("抓取失敗", e); }
             document.getElementById('loading-hint').style.display = 'none';
         }
@@ -120,6 +122,25 @@
 
         function openModal(id) {
             currentEditingSeat = id;
+            
+            // 優先讀取上次儲存的名字
+            const savedName = localStorage.getItem('office_user_name');
+            const currentData = allSeatData.find(s => s.id === id);
+
+            if (savedName) {
+                document.getElementById('input-name').value = savedName;
+            } else if (currentData && currentData.name !== '空位') {
+                document.getElementById('input-name').value = currentData.name;
+            } else {
+                document.getElementById('input-name').value = '';
+            }
+
+            // 預載目前的狀態與訊息
+            if (currentData) {
+                document.getElementById('input-status').value = currentData.status;
+                document.getElementById('input-msg').value = currentData.msg;
+            }
+
             document.getElementById('overlay').style.display = 'block';
             document.getElementById('modal').style.display = 'block';
         }
@@ -130,11 +151,25 @@
         }
 
         async function saveToSheet() {
+            const nameInput = document.getElementById('input-name').value.trim();
+            const statusInput = document.getElementById('input-status').value;
+            const msgInput = document.getElementById('input-msg').value.trim();
+
+            if (!nameInput && statusInput !== 'empty') {
+                alert("請輸入您的姓名喔！");
+                return;
+            }
+
+            // 記憶名字到瀏覽器
+            if (nameInput) {
+                localStorage.setItem('office_user_name', nameInput);
+            }
+
             const payload = {
                 id: currentEditingSeat,
-                name: document.getElementById('input-name').value,
-                status: document.getElementById('input-status').value,
-                msg: document.getElementById('input-msg').value
+                name: nameInput || '空位',
+                status: statusInput,
+                msg: msgInput
             };
 
             closeModal();
